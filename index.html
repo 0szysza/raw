@@ -11,7 +11,7 @@ body{margin:0;font-family:Arial,sans-serif;background:#f4f4f5;color:#18181b;tran
 body.dark{background:#18181b;color:#f4f4f5}
 .container{max-width:1200px;margin:auto;padding:30px}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-h1{margin:0}
+h1{margin:0;font-size:28px}
 .controls{display:flex;gap:10px}
 button,select{border:0;border-radius:8px;padding:10px 14px;font-size:14px;cursor:pointer}
 button{background:#18181b;color:white}
@@ -65,526 +65,427 @@ body.dark textarea{background:#27272a;color:#f4f4f5;border-color:#3f3f46}
 
 <script>
 function toggleTheme(){
-document.body.classList.toggle("dark");
-localStorage.setItem("theme",document.body.classList.contains("dark")?"dark":"light");
+    document.body.classList.toggle("dark");
+    localStorage.setItem(
+        "theme",
+        document.body.classList.contains("dark") ? "dark" : "light"
+    );
 }
 
 if(localStorage.getItem("theme")==="dark"){
-document.body.classList.add("dark");
+    document.body.classList.add("dark");
 }
 
 function clearAll(){
-document.getElementById("input").value="";
-document.getElementById("output").value="";
-document.getElementById("status").textContent="";
+    document.getElementById("input").value="";
+    document.getElementById("output").value="";
+    document.getElementById("status").textContent="";
 }
 
 function copyOutput(){
-const output=document.getElementById("output");
-output.select();
-navigator.clipboard.writeText(output.value);
-document.getElementById("status").textContent="Copied!";
+    const output=document.getElementById("output");
+    navigator.clipboard.writeText(output.value);
+    document.getElementById("status").textContent="Copied!";
 }
 
 function convert(){
-const input=document.getElementById("input").value;
-const mode=document.getElementById("mode").value;
+    const input=document.getElementById("input").value;
+    const mode=document.getElementById("mode").value;
 
-if(!input.trim()){
-document.getElementById("status").textContent="Nothing to convert.";
-return;
+    if(!input.trim()){
+        document.getElementById("status").textContent="Nothing to convert.";
+        return;
+    }
+
+    try{
+        let result;
+
+        if(mode==="upgrades"){
+            result=convertUpgrades(input);
+        }else{
+            result=convertChestLoot(input);
+        }
+
+        document.getElementById("output").value=result;
+        document.getElementById("status").textContent="Converted successfully.";
+    }catch(error){
+        document.getElementById("output").value="";
+        document.getElementById("status").textContent="Error: "+error.message;
+    }
 }
 
-try{
-let result;
-
-if(mode==="upgrades"){
-result=convertUpgrades(input);
-}else{
-result=convertChestLoot(input);
+function escapeOutput(text){
+    return String(text)
+        .replace(/\\/g,"\\\\")
+        .replace(/"/g,'\\"')
+        .replace(/\r?\n/g,"<br/>");
 }
 
-document.getElementById("output").value=result;
-document.getElementById("status").textContent="Converted successfully.";
-}catch(e){
-document.getElementById("output").value="";
-document.getElementById("status").textContent="Error: "+e.message;
-}
-}
+function getString(block,key){
+    const regex=new RegExp(
+        "\\b"+key+"\\s*=\\s*[\"']([^\"']*)[\"']"
+    );
 
-function getString(text,key){
-const regex=new RegExp("\\b"+key+"\\s*=\\s*[\"']([^\"']*)[\"']");
-const match=text.match(regex);
-return match?match[1]:null;
+    const match=block.match(regex);
+
+    return match ? match[1] : null;
 }
 
-function getNumber(text,key){
-const regex=new RegExp("\\b"+key+"\\s*=\\s*(-?\\d+(?:\\.\\d+)?)");
-const match=text.match(regex);
-return match?match[1]:null;
+function getNumber(block,key){
+    const regex=new RegExp(
+        "\\b"+key+"\\s*=\\s*(-?\\d+(?:\\.\\d+)?)"
+    );
+
+    const match=block.match(regex);
+
+    return match ? match[1] : null;
 }
 
-function luaString(value){
-return '"' + value.replace(/\\/g,"\\\\").replace(/"/g,'\\"') + '"';
+function getBalancedBlock(text,start){
+    const open=text.indexOf("{",start);
+
+    if(open===-1){
+        return null;
+    }
+
+    let depth=0;
+    let quote=null;
+
+    for(let i=open;i<text.length;i++){
+        const char=text[i];
+
+        if(quote){
+            if(char===quote && text[i-1]!=="\\"){
+                quote=null;
+            }
+            continue;
+        }
+
+        if(char==="\"" || char==="'"){
+            quote=char;
+            continue;
+        }
+
+        if(char==="{"){
+            depth++;
+        }else if(char==="}"){
+            depth--;
+
+            if(depth===0){
+                return {
+                    start:open,
+                    end:i,
+                    text:text.slice(open,i+1)
+                };
+            }
+        }
+    }
+
+    return null;
 }
 
-function escapeLuaPattern(text){
-return text.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+function findV2Blocks(input){
+    const blocks=[];
+    let position=0;
+
+    while(true){
+        const start=input.indexOf("v2 = {",position);
+
+        if(start===-1){
+            break;
+        }
+
+        const block=getBalancedBlock(input,start);
+
+        if(!block){
+            break;
+        }
+
+        blocks.push({
+            start:start,
+            end:block.end,
+            text:block.text
+        });
+
+        position=block.end+1;
+    }
+
+    return blocks;
 }
 
-function parseTables(text){
-const tables=[];
-let depth=0;
-let start=-1;
+function findTableAfter(text,needle){
+    const index=text.indexOf(needle);
 
-for(let i=0;i<text.length;i++){
-const c=text[i];
+    if(index===-1){
+        return null;
+    }
 
-if(c==="{"){
-if(depth===0)start=i;
-depth++;
-}else if(c==="}"){
-depth--;
-if(depth===0 && start!==-1){
-tables.push(text.slice(start,i+1));
-start=-1;
-}
-}
+    const equals=text.indexOf("=",index);
+
+    if(equals===-1){
+        return null;
+    }
+
+    return getBalancedBlock(text,equals);
 }
 
-return tables;
+function parseLevels(table){
+    const levels=[];
+
+    const regex=/\{\s*Cost\s*=\s*(-?\d+(?:\.\d+)?)\s*,\s*Value\s*=\s*(-?\d+(?:\.\d+)?)\s*\}/g;
+
+    let match;
+
+    while((match=regex.exec(table))!==null){
+        levels.push({
+            cost:match[1],
+            value:match[2]
+        });
+    }
+
+    return levels;
 }
 
-function splitTopLevel(text){
-const result=[];
-let depth=0;
-let quote=null;
-let start=0;
+function findDescription(input,fromPosition){
+    const rest=input.slice(fromPosition);
 
-for(let i=0;i<text.length;i++){
-const c=text[i];
+    const match=rest.match(
+        /v2\.Description\s*=\s*\(\s*["']([\s\S]*?)["']\s*\):format\s*\(\s*v3\s*\)/
+    );
 
-if(quote){
-if(c===quote && text[i-1]!=="\\")quote=null;
-continue;
+    if(!match){
+        return null;
+    }
+
+    return {
+        description:match[1],
+        index:fromPosition+match.index
+    };
 }
 
-if(c==="\""||c==="'"){
-quote=c;
-continue;
+function findBuff(input,descriptionIndex){
+    const before=input.slice(
+        Math.max(0,descriptionIndex-300),
+        descriptionIndex
+    );
+
+    const matches=[
+        ...before.matchAll(
+            /RichText\.autoColor\(\s*["']([^"']+)["']\s*,\s*Palette\.Text\.Pink\s*\)/g
+        )
+    ];
+
+    if(matches.length){
+        return matches[matches.length-1][1];
+    }
+
+    return null;
 }
 
-if(c==="{")depth++;
-else if(c==="}")depth--;
-else if(c===","&&depth===0){
-result.push(text.slice(start,i).trim());
-start=i+1;
-}
+function replaceDescription(text){
+    return text
+        .replace(/\\n/g,"<br/>")
+        .replace(/%\*/g,"%s");
 }
 
-const last=text.slice(start).trim();
-if(last)result.push(last);
+function getCurrencyBuff(description){
+    const match=description.match(
+        /Increases\s+(.+?)\s+currency\s+by\s+%s/
+    );
 
-return result;
-}
+    if(match){
+        return match[1];
+    }
 
-function parseUpgradeObjects(upgradesText){
-const objects=[];
-const matches=[];
-let depth=0;
-let start=-1;
-
-for(let i=0;i<upgradesText.length;i++){
-const c=upgradesText[i];
-
-if(c==="{"){
-if(depth===0)start=i;
-depth++;
-}else if(c==="}"){
-depth--;
-if(depth===0&&start!==-1){
-matches.push(upgradesText.slice(start,i+1));
-start=-1;
-}
-}
-}
-
-for(const obj of matches){
-const cost=getNumber(obj,"Cost");
-const value=getNumber(obj,"Value");
-
-if(cost!==null&&value!==null){
-objects.push({
-cost:cost,
-value:value
-});
-}
-}
-
-return objects;
-}
-
-function parseUpgrades(input){
-const results=[];
-
-const regex=/v2\s*=\s*\{([\s\S]*?)\}\s*v3\s*=/g;
-let match;
-
-while((match=regex.exec(input))!==null){
-const block=match[1];
-
-const name=getString(block,"Name");
-const icon=getString(block,"Icon");
-const layout=getNumber(block,"LayoutOrder");
-const type=getString(block,"Type");
-const valueType=getString(block,"ValueType");
-const baseValue=getNumber(block,"BaseValue");
-const cost=getNumber(block,"Cost");
-
-if(name){
-results.push({
-name,
-icon,
-layout,
-type,
-valueType,
-baseValue,
-cost,
-block
-});
-}
-}
-
-return results;
-}
-
-function findUpgradeTables(input){
-const results=[];
-let pos=0;
-
-while(true){
-const start=input.indexOf("v2.Upgrades",pos);
-if(start===-1)break;
-
-const equals=input.indexOf("=",start);
-if(equals===-1)break;
-
-const brace=input.indexOf("{",equals);
-if(brace===-1)break;
-
-let depth=0;
-let end=-1;
-
-for(let i=brace;i<input.length;i++){
-if(input[i]==="{")depth++;
-else if(input[i]==="}"){
-depth--;
-if(depth===0){
-end=i;
-break;
-}
-}
-}
-
-if(end!==-1){
-results.push(input.slice(brace,end+1));
-pos=end+1;
-}else{
-break;
-}
-}
-
-return results;
-}
-
-function parseUpgradeData(input){
-const definitions=[];
-let pos=0;
-
-while(true){
-const start=input.indexOf("v2 = {",pos);
-if(start===-1)break;
-
-const open=input.indexOf("{",start);
-let depth=0;
-let end=-1;
-
-for(let i=open;i<input.length;i++){
-if(input[i]==="{")depth++;
-else if(input[i]==="}"){
-depth--;
-if(depth===0){
-end=i;
-break;
-}
-}
-}
-
-if(end===-1)break;
-
-const block=input.slice(open+1,end);
-
-const name=getString(block,"Name");
-const descriptionBlock=input.slice(end);
-
-definitions.push({
-name,
-block,
-end
-});
-
-pos=end+1;
-}
-
-return definitions;
-}
-
-function extractDescriptions(input){
-const descriptions=[];
-
-const regex=/v2\.Description\s*=\s*\(([\s\S]*?)\):format/g;
-let match;
-
-while((match=regex.exec(input))!==null){
-const raw=match[1].trim();
-let description=raw;
-
-const quoted=raw.match(/["']([\s\S]*?)["']/);
-if(quoted)description=quoted[1];
-
-description=description.replace(/\\n/g,"<br/>");
-
-descriptions.push(description);
-}
-
-return descriptions;
-}
-
-function extractBuffs(input){
-const buffs=[];
-const regex=/RichText\.autoColor\(\s*["']([^"']+)["']/g;
-let match;
-
-while((match=regex.exec(input))!==null){
-buffs.push(match[1]);
-}
-
-return buffs;
-}
-
-function extractUpgradeBlocks(input){
-const blocks=[];
-let pos=0;
-
-while(true){
-const v2=input.indexOf("v2 = {",pos);
-if(v2===-1)break;
-
-const open=input.indexOf("{",v2);
-if(open===-1)break;
-
-let depth=0;
-let end=-1;
-
-for(let i=open;i<input.length;i++){
-if(input[i]==="{")depth++;
-else if(input[i]==="}"){
-depth--;
-if(depth===0){
-end=i;
-break;
-}
-}
-}
-
-if(end===-1)break;
-
-const block=input.slice(v2,end+1);
-
-let after=end+1;
-while(after<input.length&&/\s/.test(input[after]))after++;
-
-const next=input.slice(after);
-
-blocks.push({
-block,
-afterText:next
-});
-
-pos=end+1;
-}
-
-return blocks;
+    return null;
 }
 
 function convertUpgrades(input){
-const definitions=[];
-const descriptions=extractDescriptions(input);
+    const blocks=findV2Blocks(input);
+    const upgrades=[];
 
-let pos=0;
+    for(let i=0;i<blocks.length;i++){
+        const block=blocks[i];
 
-while(true){
-const start=input.indexOf("v2 = {",pos);
-if(start===-1)break;
+        const name=getString(block.text,"Name");
 
-const open=input.indexOf("{",start);
-let depth=0;
-let end=-1;
+        if(!name){
+            continue;
+        }
 
-for(let i=open;i<input.length;i++){
-if(input[i]==="{")depth++;
-else if(input[i]==="}"){
-depth--;
-if(depth===0){
-end=i;
-break;
-}
-}
-}
+        const type=getString(block.text,"Type");
+        const cost=getNumber(block.text,"Cost");
 
-if(end===-1)break;
+        const nextText=input.slice(block.end+1);
 
-const block=input.slice(open,end+1);
+        const descriptionInfo=findDescription(
+            input,
+            block.end+1
+        );
 
-const name=getString(block,"Name");
+        let description="";
+        let descriptionIndex=block.end+1;
 
-if(name){
-const after=input.slice(end+1);
-const upIndex=after.indexOf("v2.Upgrades");
+        if(descriptionInfo){
+            description=replaceDescription(
+                descriptionInfo.description
+            );
 
-let upgrades=[];
-let cost=getNumber(block,"Cost");
+            descriptionIndex=descriptionInfo.index;
+        }
 
-if(upIndex!==-1&&upIndex<150){
-const eq=after.indexOf("=",upIndex);
-const brace=after.indexOf("{",eq);
+        if(type==="Single"){
+            let menuName=findBuff(
+                input,
+                descriptionIndex
+            );
 
-if(brace!==-1){
-let d=0;
-let close=-1;
+            if(!menuName){
+                const menuMatch=description.match(
+                    /Toggled in the (.+?)\./
+                );
 
-for(let i=brace;i<after.length;i++){
-if(after[i]==="{")d++;
-else if(after[i]==="}"){
-d--;
-if(d===0){
-close=i;
-break;
-}
-}
-}
+                if(menuMatch){
+                    menuName=menuMatch[1];
+                }
+            }
 
-if(close!==-1){
-upgrades=parseUpgradeObjects(after.slice(brace,close+1));
-}
-}
-}
+            if(menuName){
+                description=description.replace(
+                    /Toggled in the %s\./,
+                    "Toggled in the {{CColor|ffa6f8|"+
+                    escapeOutput(menuName)+
+                    "|fw=bold}}."
+                );
+            }
 
-definitions.push({
-name,
-upgrades,
-cost,
-descriptionIndex:definitions.length
-});
-}
+            upgrades.push({
+                name:name,
+                description:description,
+                cost:cost || "0",
+                single:true
+            });
 
-pos=end+1;
-}
+            continue;
+        }
 
-const buffs=extractBuffs(input);
+        const upgradesTable=findTableAfter(
+            nextText,
+            "v2.Upgrades"
+        );
 
-const outputUpgrades=[];
+        if(!upgradesTable){
+            continue;
+        }
 
-for(let i=0;i<definitions.length;i++){
-const item=definitions[i];
+        const levels=parseLevels(
+            upgradesTable.text
+        );
 
-let description=descriptions[i]||"";
-let buff=null;
+        const currencyBuff=getCurrencyBuff(
+            description
+        );
 
-if(item.name==="Extra Currency"){
-buff="Autumn Leaves";
-}else if(item.name==="Luck"){
-buff=null;
-}else if(item.name==="Secret Luck"){
-buff=null;
-}else if(item.name==="Infinity Luck"){
-buff=null;
-}
+        upgrades.push({
+            name:name,
+            description:description,
+            buff:currencyBuff,
+            levels:levels,
+            single:false
+        });
+    }
 
-if(item.name==="Auto Rebirth"){
-outputUpgrades.push(
-'            {',
-'                name = "Auto Rebirth",',
-'                description = "Automatically rebirths for you!<br/> Toggled in the {{CColor|ffa6f8|Autumn Rebirths Menu|fw=bold}}.",',
-'                cost = '+(item.cost||"0"),
-'            },'
-);
-continue;
-}
+    let output="";
 
-const lines=[
-'            {',
-'                name = '+luaString(item.name)+',',
-'                description = '+luaString(description.replace(/%\\*/g,"%s"))+','
-];
+    for(let i=0;i<upgrades.length;i++){
+        const upgrade=upgrades[i];
 
-if(buff){
-lines.push('                buff = '+luaString(buff)+',');
-}
+        output+="            {\n";
+        output+='                name = "'+
+            escapeOutput(upgrade.name)+
+            '",\n';
 
-lines.push('                symbol = "%",');
-lines.push('                levels = {');
+        output+='                description = "'+
+            escapeOutput(upgrade.description)+
+            '",\n';
 
-for(let j=0;j<item.upgrades.length;j++){
-const level=item.upgrades[j];
+        if(upgrade.single){
+            output+="                cost = "+
+                upgrade.cost+
+                "\n";
+        }else{
+            if(upgrade.buff){
+                output+='                buff = "'+
+                    escapeOutput(upgrade.buff)+
+                    '",\n';
+            }
 
-lines.push('                    {');
-lines.push('                        cost = '+level.cost+',');
-lines.push('                        value = '+level.value);
-lines.push('                    }'+(j<item.upgrades.length-1?',':''));
-}
+            output+='                symbol = "%",\n';
+            output+="                levels = {\n";
 
-lines.push('                }');
-lines.push('            },');
+            for(let j=0;j<upgrade.levels.length;j++){
+                const level=upgrade.levels[j];
 
-outputUpgrades.push(...lines);
-}
+                output+="                    {\n";
+                output+="                        cost = "+
+                    level.cost+
+                    ",\n";
+                output+="                        value = "+
+                    level.value+
+                    "\n";
+                output+="                    }";
 
-const result=[
-'    ["Autumn Rebirth Upgrades"] = {',
-'        dateAdded = \'2026-10-06\',',
-'        currency = \'Rebirth Shards\',',
-'        upgrades = {',
-...outputUpgrades,
-'        }',
-'    },'
-];
+                if(j<upgrade.levels.length-1){
+                    output+=",";
+                }
 
-return result.join("\n");
+                output+="\n";
+            }
+
+            output+="                }\n";
+        }
+
+        output+="            }";
+
+        if(i<upgrades.length-1){
+            output+=",";
+        }
+
+        output+="\n";
+    }
+
+    if(!upgrades.length){
+        return "-- No upgrades found";
+    }
+
+    return output;
 }
 
 function convertChestLoot(input){
-const tables=parseTables(input);
-const lines=[];
+    const result=[];
+    const lines=input.split(/\r?\n/);
 
-for(const table of tables){
-const parts=splitTopLevel(table.slice(1,-1));
+    for(const line of lines){
+        const trimmed=line.trim();
 
-for(const part of parts){
-const quoted=part.match(/["']([^"']+)["']\s*\*?\s*(?:amount\s*=\s*)?([0-9]+)?/);
+        if(
+            trimmed.startsWith("{") &&
+            (
+                trimmed.includes("chance") ||
+                trimmed.includes("Chance") ||
+                trimmed.includes("amount") ||
+                trimmed.includes("Amount")
+            )
+        ){
+            result.push(trimmed);
+        }
+    }
 
-if(quoted){
-lines.push(part.trim());
-}
-}
+    if(!result.length){
+        return "-- No chest loot entries found";
+    }
 
-}
-
-if(!lines.length){
-return "-- No chest loot entries found";
-}
-
-return lines.join("\n");
+    return result.join("\n");
 }
 </script>
 </body>
