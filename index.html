@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title></title>
+<style>
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        background: #e9e9e9;
+        color: #111;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 13px;
+    }
+    .window {
+        width: 900px;
+        max-width: calc(100vw - 20px);
+        margin: 18px auto;
+        background: #f0f0f0;
+        border: 1px solid #777;
+        box-shadow: 1px 1px 4px #999;
+    }
+    .titlebar {
+        height: 31px;
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        background: #f0f0f0;
+        border-bottom: 1px solid #aaa;
+        user-select: none;
+    }
+    .dot { display: none; }
+    .title {
+        color: #111;
+        font-size: 13px;
+    }
+    .content { padding: 10px; }
+    .toolbar {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    }
+    button {
+        border: 1px solid #888;
+        border-radius: 2px;
+        background: #f2f2f2;
+        color: #111;
+        padding: 4px 12px;
+        min-height: 27px;
+        cursor: pointer;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 13px;
+        box-shadow: inset 0 0 0 1px #fff;
+    }
+    button:hover { background: #e5e5e5; }
+    button:active {
+        background: #d8d8d8;
+        box-shadow: inset 1px 1px 2px #aaa;
+    }
+    button.primary { background: #f2f2f2; border-color: #777; color: #111; }
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    .panel {
+        border: 1px solid #999;
+        background: white;
+    }
+    .panel-head {
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 6px;
+        background: #e5e5e5;
+        border-bottom: 1px solid #aaa;
+        color: #111;
+        font-size: 12px;
+    }
+    .panel-head span:last-child {
+        color: #666;
+        font-size: 11px;
+    }
+    textarea {
+        display: block;
+        width: 100%;
+        height: 430px;
+        resize: vertical;
+        border: 0;
+        outline: 0;
+        padding: 7px;
+        background: #fff;
+        color: #111;
+        font: 12px/1.4 "Courier New", Consolas, monospace;
+        tab-size: 4;
+    }
+    .status {
+        margin-top: 8px;
+        padding: 5px 7px;
+        border: 1px solid #aaa;
+        background: #f7f7f7;
+        color: #555;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+    }
+    .status.ok { color: #164a16; }
+    .status.error { color: #8b0000; }
+    .options {
+        display: flex;
+        gap: 15px;
+        margin: 7px 0;
+        color: #333;
+        font-size: 12px;
+    }
+    label { cursor: pointer; }
+    input[type="checkbox"] { vertical-align: -2px; }
+    .help {
+        margin-top: 8px;
+        padding: 6px 8px;
+        border: 1px solid #aaa;
+        background: #e8e8e8;
+        color: #444;
+        line-height: 1.4;
+        font-size: 12px;
+    }
+    code { font-family: "Courier New", monospace; }
+    @media (max-width: 850px) {
+        .grid { grid-template-columns: 1fr; }
+        textarea { height: 350px; }
+    }
+
+    body.dark {
+        background: #202020;
+        color: #eee;
+    }
+    body.dark .window { background: #2b2b2b; border-color: #555; box-shadow: 1px 1px 5px #000; }
+    body.dark .titlebar { background: #2b2b2b; border-color: #555; }
+    body.dark .title { color: #eee; }
+    body.dark button { background: #333; color: #eee; border-color: #666; box-shadow: inset 0 0 0 1px #444; }
+    body.dark button:hover { background: #3d3d3d; }
+    body.dark button:active { background: #292929; }
+    body.dark .panel { background: #181818; border-color: #555; }
+    body.dark .panel-head { background: #333; border-color: #555; color: #eee; }
+    body.dark .panel-head span:last-child { color: #aaa; }
+    body.dark textarea { background: #181818; color: #eee; }
+    body.dark .status { background: #242424; border-color: #555; color: #aaa; }
+    body.dark .status.ok { color: #9cdcfe; }
+    body.dark .status.error { color: #f48771; }
+    body.dark .options { color: #ddd; }
+    body.dark .help { background: #303030; border-color: #555; color: #bbb; }
+</style>
+</head>
+<body>
+<div class="window">
+    <div class="titlebar">
+        <div class="dot"></div>
+        <div class="title"></div>
+    </div>
+
+    <div class="content">
+        <div class="toolbar">
+            <button class="primary" onclick="convert()">Convert</button>
+            <button onclick="copyOutput()">Copy output</button>
+            <button onclick="clearAll()">Clear</button>
+            <button onclick="loadExample()">Load example</button>
+            <button onclick="toggleTheme()">Dark / Light</button>
+        </div>
+
+        <div class="options">
+            <label><input type="checkbox" id="includeReward" checked> Include Reward as chance = 100</label>
+            <label><input type="checkbox" id="includeZero" checked> Include chance = 0</label>
+        </div>
+
+        <div class="grid">
+            <section class="panel">
+                <div class="panel-head">
+                    <span>Input — game Lua</span>
+                    <span>CTRL + V</span>
+                </div>
+                <textarea id="input" spellcheck="false" placeholder='Paste LootPoolBuilder code here...'></textarea>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <span>Output — wiki format</span>
+                    <span>Lua</span>
+                </div>
+                <textarea id="output" spellcheck="false" readonly></textarea>
+            </section>
+        </div>
+
+        <div id="status" class="status">Ready.</div>
+
+        <div class="help">
+            Converts BGSI LootPoolBuilder code into the wiki loot format.
+            Potion levels are converted automatically: 1–5 → Roman numerals, 6 → Evolved, 7 → Infinity.
+            Reward entries receive <code>chance = 100</code>; LootPoolBuilder Add weights become the chance value.
+        </div>
+    </div>
+</div>
+
+<script>
+const roman = {
+    1: "I", 2: "II", 3: "III", 4: "IV", 5: "V"
+};
+
+function luaValue(text, key) {
+    const re = new RegExp("\\b" + key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&") +
+        "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|(-?\\d+(?:\\.\\d+)?))", "m");
+    const m = text.match(re);
+    if (!m) return null;
+    return m[1] ?? m[2] ?? m[3];
+}
+
+function rewardName(obj) {
+    const type = luaValue(obj, "Type");
+    const amount = luaValue(obj, "Amount") ?? "1";
+    const currency = luaValue(obj, "Currency");
+    const name = luaValue(obj, "Name");
+    const levelRaw = luaValue(obj, "Level");
+
+    let base = null;
+
+    if (type === "Currency") {
+        base = currency || name;
+        base = currencyName(base);
+    } else {
+        base = name || currency || type;
+    }
+
+    if (!base) return null;
+
+    if (type === "Potion" && levelRaw !== null && levelRaw !== "") {
+        const level = Number(levelRaw);
+        if (level >= 1 && level <= 5) base += " " + roman[level];
+        else if (level === 6) base += " Evolved";
+        else if (level === 7) base += " Infinity";
+        else if (level > 7) base += " " + level;
+    }
+
+    return base + "*" + amount;
+}
+
+function currencyName(name) {
+    // Add/change mappings here if the game uses different internal currency IDs.
+    const map = {
+        "Leaves26": "Autumn Leaves",
+        "CarnivalCoins": "Carnival Coins",
+        "ChristmasEggs": "Christmas Eggs",
+        "Snowflakes": "Snowflakes"
+    };
+    return map[name] || name;
+}
+
+function parseObjects(block) {
+    const results = [];
+    let depth = 0;
+    let start = -1;
+    let inString = false;
+    let quote = "";
+
+    for (let i = 0; i < block.length; i++) {
+        const c = block[i];
+        const prev = block[i - 1];
+
+        if ((c === '"' || c === "'") && prev !== "\\") {
+            if (!inString) { inString = true; quote = c; }
+            else if (quote === c) inString = false;
+            continue;
+        }
+        if (inString) continue;
+
+        if (c === "{") {
+            if (depth === 0) start = i;
+            depth++;
+        } else if (c === "}") {
+            depth--;
+            if (depth === 0 && start !== -1) {
+                results.push(block.slice(start, i + 1));
+                start = -1;
+            }
+        }
+    }
+    return results;
+}
+
+function extractRewardBlock(input) {
+    const m = input.match(/\bReward\s*=\s*\{/);
+    if (!m) return null;
+
+    let start = m.index + m[0].length - 1;
+    let depth = 0, inString = false, quote = "";
+
+    for (let i = start; i < input.length; i++) {
+        const c = input[i], prev = input[i - 1];
+        if ((c === '"' || c === "'") && prev !== "\\") {
+            if (!inString) { inString = true; quote = c; }
+            else if (quote === c) inString = false;
+            continue;
+        }
+        if (inString) continue;
+        if (c === "{") depth++;
+        if (c === "}") {
+            depth--;
+            if (depth === 0) return input.slice(start, i + 1);
+        }
+    }
+    return null;
+}
+
+function extractAdds(input) {
+    const results = [];
+    const re = /:Add\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*,\s*\{/g;
+    let m;
+
+    while ((m = re.exec(input)) !== null) {
+        const chance = m[1];
+        const objStart = m.index + m[0].lastIndexOf("{");
+        let depth = 0, inString = false, quote = "";
+
+        for (let i = objStart; i < input.length; i++) {
+            const c = input[i], prev = input[i - 1];
+            if ((c === '"' || c === "'") && prev !== "\\") {
+                if (!inString) { inString = true; quote = c; }
+                else if (quote === c) inString = false;
+                continue;
+            }
+            if (inString) continue;
+
+            if (c === "{") depth++;
+            if (c === "}") {
+                depth--;
+                if (depth === 0) {
+                    results.push({
+                        chance: Number(chance),
+                        object: input.slice(objStart, i + 1)
+                    });
+                    re.lastIndex = i + 1;
+                    break;
+                }
+            }
+        }
+    }
+    return results;
+}
+
+function formatChance(n) {
+    if (Number.isInteger(n)) return String(n);
+    return String(n);
+}
+
+function convert() {
+    const input = document.getElementById("input").value;
+    const output = document.getElementById("output");
+    const status = document.getElementById("status");
+
+    if (!input.trim()) {
+        output.value = "";
+        status.className = "status error";
+        status.textContent = "Nothing to convert.";
+        return;
+    }
+
+    const lines = [];
+    let count = 0;
+
+    if (document.getElementById("includeReward").checked) {
+        const rewardBlock = extractRewardBlock(input);
+        if (rewardBlock) {
+            const rewardObjects = parseObjects(rewardBlock).filter(x => /\\bType\\s*=/.test(x));
+            for (const obj of rewardObjects) {
+                const name = rewardName(obj);
+                if (name) {
+                    lines.push(`{"${name}", chance = 100},`);
+                    count++;
+                }
+            }
+        }
+    }
+
+    for (const item of extractAdds(input)) {
+        if (item.chance === 0 && !document.getElementById("includeZero").checked) continue;
+        const name = rewardName(item.object);
+        if (!name) continue;
+        lines.push(`{"${name}", chance = ${formatChance(item.chance)}},`);
+        count++;
+    }
+
+    output.value = lines.join("\n");
+
+    status.className = count ? "status ok" : "status error";
+    status.textContent = count
+        ? `Converted ${count} reward${count === 1 ? "" : "s"}.`
+        : "No supported rewards were found.";
+}
+
+async function copyOutput() {
+    const output = document.getElementById("output");
+    const status = document.getElementById("status");
+    if (!output.value) return;
+
+    try {
+        await navigator.clipboard.writeText(output.value);
+        status.className = "status ok";
+        status.textContent = "Output copied to clipboard.";
+    } catch {
+        output.select();
+        document.execCommand("copy");
+        status.className = "status ok";
+        status.textContent = "Output copied to clipboard.";
+    }
+}
+
+function clearAll() {
+    document.getElementById("input").value = "";
+    document.getElementById("output").value = "";
+    document.getElementById("status").className = "status";
+    document.getElementById("status").textContent = "Ready.";
+}
+
+function loadExample() {
+    document.getElementById("input").value = `["Autumn Chest"] = {
+    DevProduct = 3713065460,
+    Rolls = 10,
+    Cooldown = 1800,
+    Reward = {{Type = "Currency", Currency = "Leaves26", Amount = 100000}},
+    Pool = (((((((((((LootPoolBuilder.new():Add(10, {Type = "Currency", Currency = "Leaves26", Amount = 50000})):Add(
+        5,
+        {Type = "Currency", Currency = "Leaves26", Amount = 100000}
+    )):Add(
+        10,
+        {Type = "Potion", Name = "Autumn Elixir", Level = 4, Amount = 3}
+    )):Add(
+        1,
+        {Type = "Potion", Name = "Lucky", Level = 7, Amount = 1}
+    )):Add(
+        1,
+        {Type = "Potion", Name = "Speed", Level = 7, Amount = 1}
+    )):Add(
+        1,
+        {Type = "Potion", Name = "Mythic", Level = 7, Amount = 1}
+    )):Add(
+        2,
+        {Type = "Potion", Name = "Ultra Infinity Elixir", Amount = 1}
+    )):Add(
+        2,
+        {Type = "Potion", Name = "Infinity Elixir", Amount = 1}
+    )):Add(
+        2,
+        {Type = "Potion", Name = "Secret Elixir", Amount = 1}
+    )):Add(
+        2,
+        {Type = "Potion", Name = "Egg Elixir", Amount = 1}
+    )):Add(
+        15,
+        {Type = "Powerup", Name = "Golden Key", Amount = 3}
+    )):Add(
+        5,
+        {Type = "Powerup", Name = "Reroll Orb", Amount = 10}
+    ):Build(),
+}`;
+    convert();
+}
+
+
+function toggleTheme() {
+    document.body.classList.toggle("dark");
+    localStorage.setItem("raw-theme", document.body.classList.contains("dark") ? "dark" : "light");
+}
+
+if (localStorage.getItem("raw-theme") === "dark") {
+    document.body.classList.add("dark");
+}
+
+document.getElementById("input").addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") convert();
+});
+</script>
+</body>
+</html>
